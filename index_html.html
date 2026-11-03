@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Misi Jelajah Malaysia</title>
+  
+  <!-- MediaPipe Libraries untuk Pengesanan Tangan -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <style>
+    /* =========================================
+       BAHAGIAN CSS (Style)
+       ========================================= */
+    @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap');
+
+    :root {
+      --primary: #0ea5e9;
+      --primary-dark: #0284c7;
+      --accent: #f59e0b;
+      --bg-color: #f0f9ff;
+      --text-color: #1e293b;
+      --correct: #22c55e;
+      --wrong: #ef4444;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Nunito', sans-serif; }
+    
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      overflow: hidden;
+      user-select: none; /* Elak teks di-highlight semasa main */
+    }
+
+    /* Container Skrin */
+    .screen {
+      position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+      transition: opacity 0.4s ease;
+      z-index: 10;
+    }
+    .hidden { opacity: 0; pointer-events: none; visibility: hidden; }
+
+    /* UI Halaman Utama */
+    .hero-title {
+      font-size: 3.5rem; font-weight: 900; color: var(--primary-dark);
+      text-shadow: 3px 3px 0px #fff, 5px 5px 0px rgba(0,0,0,0.1);
+      margin-bottom: 2rem; text-align: center;
+    }
+
+    .login-box {
+      background: rgba(255, 255, 255, 0.9);
+      padding: 2.5rem; border-radius: 1.5rem;
+      box-shadow: 0 10px 25px rgba(0,100,200,0.15);
+      width: 90%; max-width: 450px;
+    }
+
+    .form-group { margin-bottom: 1.5rem; }
+    .form-group label { display: block; font-weight: 700; margin-bottom: 0.5rem; color: var(--text-color); }
+    .form-group input {
+      width: 100%; padding: 0.8rem; border: 2px solid #cbd5e1;
+      border-radius: 0.5rem; font-size: 1.1rem; outline: none; transition: border 0.3s;
+    }
+    .form-group input:focus { border-color: var(--primary); }
+
+    .btn {
+      width: 100%; padding: 1rem; border: none; border-radius: 0.75rem;
+      font-size: 1.2rem; font-weight: 700; cursor: pointer;
+      transition: transform 0.1s, background 0.3s; margin-bottom: 1rem;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-main { background-color: var(--primary); color: white; box-shadow: 0 5px 0 var(--primary-dark); }
+    .btn-main:hover { background-color: #38bdf8; }
+    .btn-alt { background-color: var(--accent); color: white; box-shadow: 0 5px 0 #d97706; }
+
+    /* UI Skrin Permainan */
+    #game-screen { background: #f8fafc; justify-content: flex-start; z-index: 5; }
+    
+    .top-bar {
+      width: 100%; padding: 1rem 2rem; background: var(--primary-dark); color: white;
+      display: flex; justify-content: space-between; align-items: center;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1); z-index: 20;
+    }
+    .top-bar h2 { font-size: 1.2rem; margin: 0; }
+    .hud { display: flex; gap: 2rem; font-size: 1.2rem; font-weight: 700; }
+    .lives span { color: #fecdd3; }
+    .lives span.active { color: #f43f5e; text-shadow: 0 0 5px red; }
+
+    .game-layout { display: flex; width: 100%; height: calc(100vh - 60px); position: relative; }
+
+    /* Kad Puzzle */
+    .sidebar {
+      width: 280px; background: white; padding: 1rem;
+      border-right: 2px solid #e2e8f0; display: flex; flex-direction: column; gap: 0.5rem;
+      overflow-y: auto; z-index: 15;
+    }
+    .card {
+      background: white; border: 2px dashed var(--primary); border-radius: 0.5rem;
+      padding: 0.8rem; text-align: center; font-weight: 700; color: var(--primary-dark);
+      cursor: grab; transition: background 0.2s; touch-action: none;
+    }
+    .card:hover { background: #e0f2fe; }
+    .card.dragging {
+      position: absolute; pointer-events: none; z-index: 9999;
+      box-shadow: 0 10px 20px rgba(0,0,0,0.3); transform: scale(1.1) translate(-50%, -50%);
+      border-style: solid; margin: 0;
+    }
+
+    /* Peta Interaktif */
+    .map-area {
+      flex: 1; position: relative; display: flex; align-items: center; justify-content: center;
+      background: #eff6ff; overflow: hidden;
+    }
+    #malaysia-map { width: 95%; max-width: 900px; height: 95%; }
+    .state-region { fill: #cbd5e1; stroke: #fff; stroke-width: 3; transition: fill 0.3s; }
+    .state-region.matched { fill: var(--correct); stroke: #166534; }
+    .state-label { font-size: 12px; fill: #475569; font-weight: bold; pointer-events: none; }
+
+    /* Webcam & Kursor Jari */
+    .webcam-box {
+      position: absolute; bottom: 20px; right: 20px; width: 220px; height: 160px;
+      border-radius: 12px; overflow: hidden; border: 4px solid white;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3); z-index: 40; background: #000;
+    }
+    .webcam-box video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+    
+    #finger-pointer {
+      position: fixed; top: -50px; left: -50px; width: 24px; height: 24px;
+      background-color: rgba(59, 130, 246, 0.8); border: 3px solid white;
+      border-radius: 50%; pointer-events: none; z-index: 10000;
+      transition: background-color 0.2s, transform 0.1s;
+    }
+    #finger-pointer.pinching {
+      background-color: rgba(34, 197, 94, 0.9); transform: scale(0.7); border-color: yellow;
+    }
+
+    /* Popup Maklum Balas */
+    #feedback-toast {
+      position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
+      padding: 0.8rem 2rem; border-radius: 2rem; font-weight: 700; font-size: 1.2rem;
+      color: white; opacity: 0; transition: opacity 0.3s, transform 0.3s; z-index: 100;
+    }
+    #feedback-toast.show { opacity: 1; transform: translate(-50%, 10px); }
+
+    /* Skrin Keputusan */
+    .result-box { text-align: center; }
+    .res-title { font-size: 2.5rem; font-weight: 900; margin-bottom: 1rem; }
+    .res-item { font-size: 1.3rem; margin: 0.5rem 0; color: #334155; }
+    .res-item span { font-weight: 800; color: var(--primary-dark); }
+  </style>
+</head>
+<body>
+
+  <!-- Kursor Jari -->
+  <div id="finger-pointer"></div>
+
+  <!-- HALAMAN UTAMA -->
+  <div id="home-screen" class="screen">
+    <h1 class="hero-title">MISI JELAJAH MALAYSIA</h1>
+    <div class="login-box">
+      <div class="form-group">
+        <label>Nama Pemain</label>
+        <input type="text" id="input-nama" placeholder="Contoh: Ahmad Ali" required>
+      </div>
+      <div class="form-group">
+        <label>Kelas</label>
+        <input type="text" id="input-kelas" placeholder="Contoh: 3 Cemerlang" required>
+      </div>
+      <button class="btn btn-main" onclick="mulaPermainan()">MULA PERMAINAN</button>
+      <button class="btn btn-alt" onclick="tunjukPanduan()">PANDUAN</button>
+    </div>
+  </div>
+
+  <!-- SKRIN PERMAINAN -->
+  <div id="game-screen" class="screen hidden">
+    <div class="top-bar">
+      <h2>Level 1: Kenali Negeri</h2>
+      <div class="hud">
+        <div>Masa: <span id="hud-masa">00:00</span></div>
+        <div>Markah: <span id="hud-markah">0</span>/160</div>
+        <div class="lives" id="hud-nyawa">
+          <span class="active">❤️</span><span class="active">❤️</span><span class="active">❤️</span>
+        </div>
+      </div>
+    </div>
+    
+    <div id="feedback-toast">Tahniah!</div>
+
+    <div class="game-layout">
+      <!-- Ruang Kad -->
+      <div class="sidebar" id="card-panel"></div>
+      
+      <!-- Ruang Peta (SVG Abstraksi Peta Malaysia - Versi Buta tanpa Label) -->
+      <div class="map-area">
+        <svg id="malaysia-map" viewBox="0 0 1000 500" xmlns="http://www.w3.org/2000/svg">
+          <!-- Semenanjung -->
+          <path id="Perlis" data-state="Perlis" class="state-region" d="M 120 50 L 160 50 L 150 80 L 110 80 Z" />
+          
+          <path id="Kedah" data-state="Kedah" class="state-region" d="M 110 80 L 150 80 L 190 120 L 150 170 L 100 130 Z" />
+          
+          <circle id="Pulau Pinang" data-state="Pulau Pinang" class="state-region" cx="95" cy="150" r="15" />
+          
+          <path id="Perak" data-state="Perak" class="state-region" d="M 150 170 L 190 120 L 230 180 L 200 270 L 140 240 Z" />
+          
+          <path id="Kelantan" data-state="Kelantan" class="state-region" d="M 190 120 L 260 110 L 280 180 L 230 180 Z" />
+          
+          <path id="Terengganu" data-state="Terengganu" class="state-region" d="M 260 110 L 330 130 L 300 230 L 260 210 Z" />
+          
+          <path id="Pahang" data-state="Pahang" class="state-region" d="M 230 180 L 280 180 L 260 210 L 300 230 L 280 320 L 210 270 Z" />
+          
+          <path id="Selangor" data-state="Selangor" class="state-region" d="M 140 240 L 200 270 L 190 320 L 130 300 Z" />
+          
+          <circle id="Kuala Lumpur" data-state="Kuala Lumpur" class="state-region" cx="170" cy="300" r="8" />
+          
+          <circle id="Putrajaya" data-state="Putrajaya" class="state-region" cx="185" cy="315" r="6" />
+          
+          <path id="Negeri Sembilan" data-state="Negeri Sembilan" class="state-region" d="M 190 320 L 210 270 L 250 320 L 210 350 Z" />
+          
+          <path id="Melaka" data-state="Melaka" class="state-region" d="M 210 350 L 250 320 L 260 360 L 220 380 Z" />
+          
+          <path id="Johor" data-state="Johor" class="state-region" d="M 250 320 L 280 320 L 330 380 L 290 430 L 220 380 L 260 360 Z" />
+
+          <!-- Borneo (Sabah & Sarawak) -->
+          <path id="Sarawak" data-state="Sarawak" class="state-region" d="M 450 350 L 550 250 L 700 280 L 650 400 L 500 420 Z" />
+          
+          <path id="Sabah" data-state="Sabah" class="state-region" d="M 700 280 L 780 150 L 920 180 L 850 300 Z" />
+          
+          <circle id="Labuan" data-state="Labuan" class="state-region" cx="740" cy="200" r="10" />
+        </svg>
+      </div>
+    </div>
+    
+    <div class="webcam-box">
+      <video id="video-input" autoplay playsinline></video>
+    </div>
+  </div>
+
+  <!-- SKRIN KEPUTUSAN -->
+  <div id="result-screen" class="screen hidden">
+    <div class="login-box result-box">
+      <h2 id="res-status" class="res-title">GAME OVER</h2>
+      <div class="res-item">Nama: <span id="out-nama"></span></div>
+      <div class="res-item">Kelas: <span id="out-kelas"></span></div>
+      <div class="res-item">Markah Akhir: <span id="out-markah">0</span> / 160</div>
+      <div class="res-item">Masa Diambil: <span id="out-masa">00:00</span></div>
+      <div class="res-item">Baki Nyawa: <span id="out-nyawa">0</span> ❤️</div>
+      
+      <p id="saving-indicator" style="margin-top:15px; color:var(--primary-dark); font-weight:bold;"></p>
+      
+      <button class="btn btn-main" style="margin-top: 20px;" onclick="location.reload()">MAIN SEMULA</button>
+    </div>
+  </div>
+
+  <script>
+    /* =========================================
+       BAHAGIAN JAVASCRIPT (Logik Permainan)
+       ========================================= */
+    const senaraiNegeri = [
+      "Perlis", "Kedah", "Pulau Pinang", "Perak", "Selangor", "Negeri Sembilan", 
+      "Melaka", "Johor", "Pahang", "Terengganu", "Kelantan", "Sabah", "Sarawak", 
+      "Kuala Lumpur", "Putrajaya", "Labuan"
+    ];
+    
+    let dataPemain = { nama: "", kelas: "" };
+    let skor = 0;
+    let nyawa = 3;
+    let padananBetul = 0;
+    
+    let pemasa;
+    let saatBerlalu = 0;
+    
+    // Pembolehubah Interaksi
+    let sedangPinch = false;
+    let kadSemasa = null;
+    const kursor = document.getElementById('finger-pointer');
+    const mesejToast = document.getElementById('feedback-toast');
+
+    // 1. Fungsi Utama UI
+    function tunjukPanduan() {
+      alert("PANDUAN PERMAINAN:\n\n1. Pastikan webcam dibenarkan (Allow).\n2. Buka tapak tangan untuk gerakkan titik biru.\n3. Rapatkan ibu jari & jari telunjuk (pinch) untuk 'pegang' kad negeri.\n4. Bawa kad ke dalam peta dan buka jari untuk lepaskan.\n5. Anda juga boleh main guna tetikus atau jari (skrin sentuh).");
+    }
+
+    function mulaPermainan() {
+      try {
+        dataPemain.nama = document.getElementById('input-nama').value.trim();
+        dataPemain.kelas = document.getElementById('input-kelas').value.trim();
+        
+        if(!dataPemain.nama || !dataPemain.kelas) {
+          alert("Sila lengkapkan Nama dan Kelas sebelum mula.");
+          return;
+        }
+        
+        document.getElementById('home-screen').classList.add('hidden');
+        document.getElementById('game-screen').classList.remove('hidden');
+        
+        sediaKadPuzzle();
+        mulaMasa();
+        aktifkanWebcam();
+      } catch (err) {
+        console.error("Ralat Mula Permainan:", err);
+        alert("Terdapat ralat teknikal. Namun permainan akan diteruskan.");
+      }
+    }
+
+    function sediaKadPuzzle() {
+      const panel = document.getElementById('card-panel');
+      panel.innerHTML = "";
+      
+      // Rawakkan susunan kad
+      let susunanRawak = [...senaraiNegeri].sort(() => Math.random() - 0.5);
+      
+      susunanRawak.forEach(negeri => {
+        let kad = document.createElement('div');
+        kad.className = 'card';
+        kad.innerText = negeri;
+        kad.dataset.state = negeri;
+        
+        // Sokongan Tetikus (PC/Laptop)
+        kad.addEventListener('mousedown', mulaDragTetikus);
+        // Sokongan Skrin Sentuh (Telefon/Tablet/Smartboard)
+        kad.addEventListener('touchstart', mulaDragSentuh, {passive: false});
+        
+        panel.appendChild(kad);
+      });
+    }
+
+    // 2. Sistem Masa & Markah
+    function mulaMasa() {
+      pemasa = setInterval(() => {
+        saatBerlalu++;
+        document.getElementById('hud-masa').innerText = formatMasa(saatBerlalu);
+      }, 1000);
+    }
+    
+    function formatMasa(saat) {
+        let m = Math.floor(saat / 60).toString().padStart(2, '0');
+        let s = (saat % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+    }
+
+    function kemaskiniHUD() {
+      document.getElementById('hud-markah').innerText = skor;
+      let htmlNyawa = "";
+      for(let i=0; i<3; i++) {
+        htmlNyawa += i < nyawa ? '<span class="active">❤️</span>' : '<span>🤍</span>';
+      }
+      document.getElementById('hud-nyawa').innerHTML = htmlNyawa;
+    }
+
+    function paparMesej(teks, berjaya) {
+      mesejToast.innerText = teks;
+      mesejToast.style.backgroundColor = berjaya ? "var(--correct)" : "var(--wrong)";
+      mesejToast.classList.add('show');
+      setTimeout(() => { mesejToast.classList.remove('show'); }, 2000);
+    }
+
+    // 3. Logik Drag & Drop dan Semakan
+    function semakJawapan(elemenKad, x, y) {
+      // Sembunyikan kad sekejap untuk kesan elemen SVG di bawahnya
+      elemenKad.style.display = 'none';
+      let sasaran = document.elementFromPoint(x, y);
+      elemenKad.style.display = 'block';
+
+      if(sasaran && sasaran.classList.contains('state-region')) {
+        let negeriSasaran = sasaran.dataset.state;
+        let negeriKad = elemenKad.dataset.state;
+        
+        if(negeriSasaran === negeriKad) {
+          // JAWAPAN BETUL
+          skor += 10;
+          padananBetul++;
+          sasaran.classList.add('matched');
+          elemenKad.remove(); // Buang kad dari senarai
+          paparMesej("TAHNIAH! JAWAPAN BETUL!", true);
+          kemaskiniHUD();
+          
+          if(padananBetul === 16) tamatPermainan(true);
+        } else {
+          // JAWAPAN SALAH
+          nyawa--;
+          paparMesej("MAAF, CUBA LAGI!", false);
+          kembaliKeAsal(elemenKad);
+          kemaskiniHUD();
+          
+          if(nyawa <= 0) tamatPermainan(false);
+        }
+      } else {
+        // Lepas di luar peta
+        kembaliKeAsal(elemenKad);
+      }
+    }
+
+    function kembaliKeAsal(elemenKad) {
+      elemenKad.classList.remove('dragging');
+      elemenKad.style.position = 'relative';
+      elemenKad.style.left = 'auto';
+      elemenKad.style.top = 'auto';
+      document.getElementById('card-panel').appendChild(elemenKad);
+    }
+
+    function tamatPermainan(menang) {
+      clearInterval(pemasa);
+      document.getElementById('game-screen').classList.add('hidden');
+      document.getElementById('result-screen').classList.remove('hidden');
+      
+      let teksStatus = menang ? "TAHNIAH! ANDA BERJAYA MENYELESAIKAN PUZZLE MALAYSIA!" : "GAME OVER";
+      document.getElementById('res-status').innerText = teksStatus;
+      document.getElementById('res-status').style.color = menang ? "var(--correct)" : "var(--wrong)";
+      
+      let masaAkhir = formatMasa(saatBerlalu);
+      document.getElementById('out-nama').innerText = dataPemain.nama;
+      document.getElementById('out-kelas').innerText = dataPemain.kelas;
+      document.getElementById('out-markah').innerText = skor;
+      document.getElementById('out-masa').innerText = masaAkhir;
+      document.getElementById('out-nyawa').innerText = nyawa;
+
+      // Semak jika dimainkan dalam Google Apps Script atau Ujian Tempatan (Local Test)
+      let indicator = document.getElementById('saving-indicator');
+      if(typeof google !== 'undefined' && google.script) {
+        indicator.innerText = "Menyimpan rekod ke Google Sheets...";
+        google.script.run
+          .withSuccessHandler(msg => { indicator.innerText = msg; })
+          .withFailureHandler(() => { indicator.innerText = "Gagal menyimpan rekod. Sila periksa capaian internet."; })
+          .simpanRekod(dataPemain.nama, dataPemain.kelas, skor, masaAkhir, nyawa, (menang ? "BERJAYA" : "GAGAL"));
+      } else {
+         indicator.innerText = "Mod Ujian Tempatan (Local Test Mode). Rakaman markah simulasi berjaya.";
+         console.log(`[SIMULASI REKOD] Nama: ${dataPemain.nama}, Markah: ${skor}, Masa: ${masaAkhir}`);
+      }
+    }
+
+    // 4. Sistem Webcam & MediaPipe (Pengesanan Jari)
+    const elemenVideo = document.getElementById('video-input');
+    
+    // Smoothing (Interpolation) koordinat supaya pergerakan tak bergegar
+    let kursorX_sebenar = window.innerWidth / 2;
+    let kursorY_sebenar = window.innerHeight / 2;
+    let kursorX_semasa = kursorX_sebenar;
+    let kursorY_semasa = kursorY_sebenar;
+
+    function aktifkanWebcam() {
+      try {
+        if (typeof Hands === 'undefined' || typeof Camera === 'undefined') {
+          console.warn("Pustaka MediaPipe gagal dimuatkan. Sistem akan menggunakan kawalan tetikus/sentuh sahaja.");
+          return;
+        }
+
+        const hands = new Hands({locateFile: (file) => {
+          return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+        
+        hands.setOptions({
+          maxNumHands: 1,
+          modelComplexity: 1,
+          minDetectionConfidence: 0.7,
+          minTrackingConfidence: 0.7
+        });
+        hands.onResults(prosesKeputusanWebcam);
+        
+        const kamera = new Camera(elemenVideo, {
+          onFrame: async () => { await hands.send({image: elemenVideo}); },
+          width: 320, height: 240
+        });
+        kamera.start().catch(err => {
+          console.warn("Kamera tidak dibenarkan atau tiada. Beralih ke mod tetikus/sentuhan.", err);
+        });
+        
+        // Loop untuk menggerakkan kursor secara lancar (smooth)
+        requestAnimationFrame(kemaskiniPosisiKursor);
+      } catch (err) {
+        console.warn("Ralat kamera:", err);
+      }
+    }
+
+    function prosesKeputusanWebcam(results) {
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        let titikTangan = results.multiHandLandmarks[0];
+        
+        let hujungTelunjuk = titikTangan[8];
+        let hujungIbuJari = titikTangan[4];
+        
+        // Terbalikkan paksi X (Mirror Effect)
+        kursorX_sebenar = (1 - hujungTelunjuk.x) * window.innerWidth;
+        kursorY_sebenar = hujungTelunjuk.y * window.innerHeight;
+        
+        // Kira jarak (pinch)
+        let jarakPinch = Math.hypot(hujungTelunjuk.x - hujungIbuJari.x, hujungTelunjuk.y - hujungIbuJari.y);
+        let hadPinch = 0.06; // Sensitiviti cubitan
+        
+        if (jarakPinch < hadPinch) {
+          if (!sedangPinch) {
+            sedangPinch = true;
+            kursor.classList.add('pinching');
+            pegangKadDenganJari(kursorX_semasa, kursorY_semasa);
+          }
+        } else {
+          if (sedangPinch) {
+            sedangPinch = false;
+            kursor.classList.remove('pinching');
+            if (kadSemasa) {
+              semakJawapan(kadSemasa, kursorX_semasa, kursorY_semasa);
+              kadSemasa = null;
+            }
+          }
+        }
+      }
+    }
+
+    function kemaskiniPosisiKursor() {
+      // Lerp (Linear Interpolation) untuk jadikan pergerakan sangat licin
+      kursorX_semasa += (kursorX_sebenar - kursorX_semasa) * 0.3;
+      kursorY_semasa += (kursorY_sebenar - kursorY_semasa) * 0.3;
+      
+      kursor.style.left = `${kursorX_semasa}px`;
+      kursor.style.top = `${kursorY_semasa}px`;
+      
+      if (kadSemasa) {
+        kadSemasa.style.left = `${kursorX_semasa}px`;
+        kadSemasa.style.top = `${kursorY_semasa}px`;
+      }
+      requestAnimationFrame(kemaskiniPosisiKursor);
+    }
+
+    function pegangKadDenganJari(x, y) {
+      kursor.style.display = 'none';
+      let elemenBawah = document.elementFromPoint(x, y);
+      kursor.style.display = 'block';
+      
+      if(elemenBawah && elemenBawah.classList.contains('card')) {
+        kadSemasa = elemenBawah;
+        document.body.appendChild(kadSemasa); 
+        kadSemasa.classList.add('dragging');
+        kadSemasa.style.left = `${x}px`;
+        kadSemasa.style.top = `${y}px`;
+      }
+    }
+
+    // 5. Kawalan Tetikus (Mouse Fallback)
+    let kadTetikus = null;
+    function mulaDragTetikus(e) {
+      if (kadSemasa) return; // Elak konflik jika webcam sedang digunakan
+      kadTetikus = e.target;
+      document.body.appendChild(kadTetikus);
+      kadTetikus.classList.add('dragging');
+      gerakDragTetikus(e);
+      document.addEventListener('mousemove', gerakDragTetikus);
+      document.addEventListener('mouseup', tamatDragTetikus);
+    }
+    function gerakDragTetikus(e) {
+      if(!kadTetikus) return;
+      kadTetikus.style.left = `${e.clientX}px`;
+      kadTetikus.style.top = `${e.clientY}px`;
+    }
+    function tamatDragTetikus(e) {
+      if(!kadTetikus) return;
+      document.removeEventListener('mousemove', gerakDragTetikus);
+      document.removeEventListener('mouseup', tamatDragTetikus);
+      semakJawapan(kadTetikus, e.clientX, e.clientY);
+      kadTetikus = null;
+    }
+
+    // 6. Kawalan Skrin Sentuh (Touchscreen Fallback untuk Telefon/Tablet)
+    let kadSentuh = null;
+    function mulaDragSentuh(e) {
+      if (kadSemasa || kadTetikus) return; 
+      e.preventDefault(); // Elak browser scrolling bila tarik kad
+      kadSentuh = e.target;
+      document.body.appendChild(kadSentuh);
+      kadSentuh.classList.add('dragging');
+      let touch = e.touches[0];
+      kadSentuh.style.left = `${touch.clientX}px`;
+      kadSentuh.style.top = `${touch.clientY}px`;
+      
+      document.addEventListener('touchmove', gerakDragSentuh, {passive: false});
+      document.addEventListener('touchend', tamatDragSentuh);
+    }
+    
+    function gerakDragSentuh(e) {
+      if(!kadSentuh) return;
+      e.preventDefault(); // Elak scroll
+      let touch = e.touches[0];
+      kadSentuh.style.left = `${touch.clientX}px`;
+      kadSentuh.style.top = `${touch.clientY}px`;
+    }
+    
+    function tamatDragSentuh(e) {
+      if(!kadSentuh) return;
+      document.removeEventListener('touchmove', gerakDragSentuh);
+      document.removeEventListener('touchend', tamatDragSentuh);
+      
+      let touch = e.changedTouches[0];
+      semakJawapan(kadSentuh, touch.clientX, touch.clientY);
+      kadSentuh = null;
+    }
+  </script>
+</body>
+</html>
